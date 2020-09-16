@@ -1,7 +1,5 @@
 *.pyc
 *.h5
-sdsim/Library
-sdsim/log/*
 sdsim/obj
 *.sln
 *.userprefs
@@ -10,3 +8,8 @@ sdsim/Temp
 sdsim/.vs
 sdsim/Build
 dataset
+sdsim/Assets/Town Creator Kit V2
+sdsim/Library
+sdsim/Packages
+sdsim/ProjectSettings
+sdsim/Logs
