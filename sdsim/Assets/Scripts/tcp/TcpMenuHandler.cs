@@ -9,59 +9,39 @@ using System.Globalization;
 
 namespace tk
 {
-    [RequireComponent(typeof(tk.JsonTcpClient))]
-
+    
     public class TcpMenuHandler : MonoBehaviour {
 
         public SceneLoader loader;
-
         private tk.JsonTcpClient client;
-        float connectTimer = 1.0f;
-        float timer = 0.0f;
-        
-        public enum State
-        {
-            UnConnected,
-            Connected
-        }        
 
-        public State state = State.UnConnected;
-        State prev_state = State.UnConnected;
-
-        void Awake()
+        public void Init(tk.JsonTcpClient _client)
         {
-            client = GetComponent<tk.JsonTcpClient>();
-        }
+            _client.dispatchInMainThread = true;
 
-        void Start()
-        {
-            Initcallbacks();
-        }
-
-        void Initcallbacks()
-        {
+            client = _client;
             client.dispatcher.Register("load_scene", new tk.Delegates.OnMsgRecv(OnLoadScene));
             client.dispatcher.Register("get_protocol_version", new tk.Delegates.OnMsgRecv(OnProtocolVersion));
             client.dispatcher.Register("get_scene_names", new tk.Delegates.OnMsgRecv(OnGetSceneNames));
             client.dispatcher.Register("quit_app", new tk.Delegates.OnMsgRecv(OnQuitApp));
+            client.dispatcher.Register("connected", new tk.Delegates.OnMsgRecv(OnConnected));
         }
 
-        bool Connect()
+        public void Start()
         {
-            return client.Connect();
+        }
+
+        public void OnDestroy()
+        {
+            if(client)
+                client.dispatcher.Reset();
         }
 
         void Disconnect()
         {
             client.Disconnect();
         }
-
-        void Reconnect()
-        {
-            Disconnect();
-            Connect();
-        }
-        
+      
         void OnProtocolVersion(JSONObject msg)
         {
             JSONObject json = new JSONObject(JSONObject.Type.OBJECT);
@@ -71,7 +51,7 @@ namespace tk
             client.SendMsg( json );
         }
 
-        void OnConnected()
+        void OnConnected(JSONObject msg)
         {
             SendFELoaded();
         }
@@ -98,6 +78,10 @@ namespace tk
             scenes.Add("warehouse");
             scenes.Add("sparkfun_avc");
             scenes.Add("generated_track");
+            scenes.Add("roboracingleague_1");
+            scenes.Add("track2");
+            scenes.Add("track1");
+            
 
             JSONObject json = new JSONObject(JSONObject.Type.OBJECT);
             json.AddField("scene_names", scenes);
@@ -108,9 +92,11 @@ namespace tk
 
         void OnLoadScene(JSONObject jsonObject)
         {
-            //Set these flags to trigger an auto reconnect when we load the new scene.
-            GlobalState.bAutoConnectToWebSocket = true;
             GlobalState.bAutoHideSceneMenu = true;
+
+            // since we know this is called only from a network client,
+            // we can also infer that we don't want to auto create 
+            GlobalState.bCreateCarWithoutNetworkClient = false;
 
             string scene_name = jsonObject.GetField("scene_name").str;
 
@@ -130,31 +116,23 @@ namespace tk
             {
                 loader.LoadGeneratedTrackScene();
             }
+            else if (scene_name == "roboracingleague_1")
+            {
+                loader.LoadRoboRacingLeague1Scene();
+            }
+            else if (scene_name == "track2")
+            {
+                loader.LoadTrack2Scene();
+            }
+            else if (scene_name == "track1")
+            {
+                loader.LoadTrack1Scene();
+            }
         }
         
         void OnQuitApp(JSONObject json)
         {
             Application.Quit();
-        }
-        
-        // Update is called once per frame
-        void Update () 
-        {    
-            if(state == State.UnConnected)
-            {
-                timer += Time.deltaTime;
-
-                if(timer > connectTimer)
-                {
-                    timer = 0.0f;
-
-                    if(Connect())
-                    {
-                        state = State.Connected;
-                        OnConnected();
-                    }
-                }
-            }
-        }
+        }        
     }
 }

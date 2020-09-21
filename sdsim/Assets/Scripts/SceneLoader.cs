@@ -30,7 +30,22 @@ public void LoadGeneratedTrackScene()
     SceneManager.LoadSceneAsync(4);
 }
 
-public void QuitApplication()
+public void LoadRoboRacingLeague1Scene()
+{
+    SceneManager.LoadSceneAsync(6);
+}
+
+public void LoadTrack1Scene()
+{
+    SceneManager.LoadSceneAsync(7);
+}
+
+public void LoadTrack2Scene()
+{
+    SceneManager.LoadSceneAsync(8);
+}
+
+    public void QuitApplication()
 {
     Application.Quit();
 }

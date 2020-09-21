@@ -1,17 +1,13 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using System.Net;
-using System.Net.Sockets;
 using System;
 using UnityEngine.UI;
 using System.Globalization;
 using UnityEngine.SceneManagement;
-
+using UnityStandardAssets.ImageEffects;
 
 namespace tk
 {
-    [RequireComponent(typeof(tk.JsonTcpClient))]
 
     public class TcpCarHandler : MonoBehaviour {
 
@@ -21,8 +17,6 @@ namespace tk
         public PathManager pm;
         public CameraSensor camSensor;
         private tk.JsonTcpClient client;
-        float connectTimer = 1.0f;
-        float timer = 0.0f;
         public Text ai_text;
 
         public float limitFPS = 20.0f;
@@ -37,6 +31,7 @@ namespace tk
         bool asynchronous = true;
         float time_step = 0.1f;
         bool bResetCar = false;
+        bool bExitScene = false;
 
         public enum State
         {
@@ -50,8 +45,7 @@ namespace tk
         void Awake()
         {
             car = carObj.GetComponent<ICar>();
-            client = GetComponent<tk.JsonTcpClient>();
-		    pm = GameObject.FindObjectOfType<PathManager>();
+            pm = GameObject.FindObjectOfType<PathManager>();
 
             Canvas canvas = GameObject.FindObjectOfType<Canvas>();
             GameObject go = CarSpawner.getChildGameObject(canvas.gameObject, "AISteering");
@@ -59,13 +53,14 @@ namespace tk
                 ai_text = go.GetComponent<Text>();
         }
 
-        void Start()
+        public void Init(tk.JsonTcpClient _client)
         {
-            Initcallbacks();
-        }
+            client = _client;
 
-        void Initcallbacks()
-        {
+            if(client == null)
+                return;
+
+            client.dispatchInMainThread = false; //too slow to wait.
             client.dispatcher.Register("control", new tk.Delegates.OnMsgRecv(OnControlsRecv));
             client.dispatcher.Register("exit_scene", new tk.Delegates.OnMsgRecv(OnExitSceneRecv));
             client.dispatcher.Register("reset_car", new tk.Delegates.OnMsgRecv(OnResetCarRecv));
@@ -73,13 +68,25 @@ namespace tk
             client.dispatcher.Register("step_mode", new tk.Delegates.OnMsgRecv(OnStepModeRecv));
             client.dispatcher.Register("quit_app", new tk.Delegates.OnMsgRecv(OnQuitApp));
             client.dispatcher.Register("regen_road", new tk.Delegates.OnMsgRecv(OnRegenRoad));
-            client.dispatcher.Register("next_track", new tk.Delegates.OnMsgRecv(OnNextTrack));
-
+            client.dispatcher.Register("car_config", new tk.Delegates.OnMsgRecv(OnCarConfig));
+            client.dispatcher.Register("cam_config", new tk.Delegates.OnMsgRecv(OnCamConfig));
         }
 
-        bool Connect()
+        public void Start()
         {
-            return client.Connect();
+            SendCarLoaded();
+            state = State.SendTelemetry;
+        }
+
+        public tk.JsonTcpClient GetClient()
+        {
+            return client;
+        }
+
+        public void OnDestroy()
+        {
+            if(client)
+                client.dispatcher.Reset();
         }
 
         void Disconnect()
@@ -87,14 +94,11 @@ namespace tk
             client.Disconnect();
         }
 
-        void Reconnect()
-        {
-            Disconnect();
-            Connect();
-        }
-
         void SendTelemetry()
         {
+            if (client == null)
+                return;
+
             JSONObject json = new JSONObject(JSONObject.Type.OBJECT);
             json.AddField("msg_type", "telemetry");
 
@@ -132,9 +136,13 @@ namespace tk
 
         void SendCarLoaded()
         {
+            if(client == null)
+                return;
+
             JSONObject json = new JSONObject(JSONObject.Type.OBJECT);
             json.AddField("msg_type", "car_loaded");
             client.SendMsg( json );
+            Debug.Log("car loaded.");
         }
 
         void OnControlsRecv(JSONObject json)
@@ -157,6 +165,11 @@ namespace tk
 
         void OnExitSceneRecv(JSONObject json)
         {
+            bExitScene = true;
+        }
+
+        void ExitScene()
+        {
             SceneManager.LoadSceneAsync(0);
         }
 
@@ -167,22 +180,21 @@ namespace tk
 
         void OnRequestNewCarRecv(JSONObject json)
         {
-            string host = json.GetField("host").str;
-            string port = json.GetField("port").str;
+            tk.JsonTcpClient client = null; //TODO where to get client?
 
             //We get this callback in a worker thread, but need to make mainthread calls.
             //so use this handy utility dispatcher from
             // https://github.com/PimDeWitte/UnityMainThreadDispatcher
-            UnityMainThreadDispatcher.Instance().Enqueue(SpawnNewCar(host, port));
+            UnityMainThreadDispatcher.Instance().Enqueue(SpawnNewCar(client));
         }
 
-        IEnumerator SpawnNewCar(string host, string port)
+        IEnumerator SpawnNewCar(tk.JsonTcpClient client)
         {
             CarSpawner spawner = GameObject.FindObjectOfType<CarSpawner>();
 
             if(spawner != null)
             {
-                spawner.Spawn(Vector3.right * -4.0f, host, port);
+                spawner.Spawn(client);
             }
 
             yield return null;
@@ -216,9 +228,7 @@ namespace tk
                     path_mgr.turnInc = turn_increment;
                 }
 
-                if (rand_seed != 0) {
-                    UnityEngine.Random.InitState(rand_seed);
-                }
+                UnityEngine.Random.InitState(rand_seed);
                 train_mgr.SetRoadStyle(road_style);
                 train_mgr.OnMenuRegenTrack();
             }
@@ -226,20 +236,71 @@ namespace tk
             yield return null;
         }
 
-        
-        void OnNextTrack(JSONObject json)
+        void OnCarConfig(JSONObject json)
         {
-            // Cycle through next track
-            UnityMainThreadDispatcher.Instance().Enqueue(NextTrack());
+            Debug.Log("Got car config message");
+
+            string body_style = json.GetField("body_style").str;
+            int body_r = int.Parse(json.GetField("body_r").str);
+            int body_g = int.Parse(json.GetField("body_g").str);
+            int body_b = int.Parse(json.GetField("body_b").str);
+            string car_name = json.GetField("car_name").str;
+            int font_size = 100;
+
+            if(json.GetField("font_size") != null)
+                font_size = int.Parse(json.GetField("font_size").str);
+
+            if(carObj != null)
+                UnityMainThreadDispatcher.Instance().Enqueue(SetCarConfig(body_style, body_r, body_g, body_b, car_name, font_size));
         }
 
-        IEnumerator NextTrack()
+        IEnumerator SetCarConfig(string body_style, int body_r, int body_g, int body_b, string car_name, int font_size)
         {
-            TrainingManager train_mgr = GameObject.FindObjectOfType<TrainingManager>();
-
-            if(train_mgr != null)
+            CarConfig conf = carObj.GetComponent<CarConfig>();
+            
+            if(conf)
             {
-                train_mgr.OnMenuNextTrack();
+                conf.SetStyle(body_style, body_r, body_g, body_b, car_name, font_size);
+            }
+
+            yield return null;
+        }
+
+        void OnCamConfig(JSONObject json)
+        {
+            float fov       = float.Parse(json.GetField("fov").str, CultureInfo.InvariantCulture.NumberFormat);
+            float offset_x  = float.Parse(json.GetField("offset_x").str, CultureInfo.InvariantCulture.NumberFormat);
+            float offset_y  = float.Parse(json.GetField("offset_y").str, CultureInfo.InvariantCulture.NumberFormat);
+            float offset_z  = float.Parse(json.GetField("offset_z").str, CultureInfo.InvariantCulture.NumberFormat);
+            float rot_x     = float.Parse(json.GetField("rot_x").str, CultureInfo.InvariantCulture.NumberFormat);
+            float fish_eye_x = float.Parse(json.GetField("fish_eye_x").str, CultureInfo.InvariantCulture.NumberFormat);
+            float fish_eye_y = float.Parse(json.GetField("fish_eye_y").str, CultureInfo.InvariantCulture.NumberFormat);
+            int img_w       = int.Parse(json.GetField("img_w").str);
+            int img_h       = int.Parse(json.GetField("img_h").str);
+            int img_d       = int.Parse(json.GetField("img_d").str);
+            string img_enc  = json.GetField("img_enc").str;
+            
+            if(carObj != null)
+                UnityMainThreadDispatcher.Instance().Enqueue(SetCamConfig(fov, offset_x, offset_y, offset_z, rot_x, img_w, img_h, img_d, img_enc, fish_eye_x, fish_eye_y));
+        }
+
+        IEnumerator SetCamConfig(float fov, float offset_x, float offset_y, float offset_z, float rot_x, 
+            int img_w, int img_h, int img_d, string img_enc, float fish_eye_x, float fish_eye_y)
+        {
+            CameraSensor camSensor = carObj.transform.GetComponentInChildren<CameraSensor>();
+            
+            if(camSensor)
+            {
+                camSensor.SetConfig(fov, offset_x, offset_y, offset_z, rot_x, img_w, img_h, img_d, img_enc);
+
+                Fisheye fe = camSensor.gameObject.GetComponent<Fisheye>();
+
+                if(fe != null && ( fish_eye_x != 0.0f || fish_eye_y != 0.0f) )
+                {
+                    fe.enabled = true;
+                    fe.strengthX = fish_eye_x;
+                    fe.strengthY = fish_eye_y;
+                }
             }
 
             yield return null;
@@ -274,22 +335,13 @@ namespace tk
         // Update is called once per frame
         void Update ()
         {
-            if(state == State.UnConnected)
+            if(bExitScene)
             {
-                timer += Time.deltaTime;
-
-                if(timer > connectTimer)
-                {
-                    timer = 0.0f;
-
-                    if(Connect())
-                    {
-                        SendCarLoaded();
-                        state = State.SendTelemetry;
-                    }
-                }
+                bExitScene = false;
+                ExitScene();
             }
-            else if(state == State.SendTelemetry)
+                
+            if(state == State.SendTelemetry)
             {
                 if (bResetCar)
                 {
