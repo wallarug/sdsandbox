@@ -17,11 +17,13 @@ public class Car : MonoBehaviour, ICar {
 	public float requestSteering = 0f;
 
 	public Vector3 acceleration = Vector3.zero;
+	public Vector3 velocity = Vector3.zero;
 	public Vector3 prevVel = Vector3.zero;
 
 	public Vector3 startPos;
 	public Quaternion startRot;
-
+	private Quaternion rotation = Quaternion.identity;
+	private Quaternion gyro = Quaternion.identity;
 	public float length = 1.7f;
 
 	Rigidbody rb;
@@ -144,14 +146,17 @@ public class Car : MonoBehaviour, ICar {
 
 	public Vector3 GetVelocity()
 	{
-		return rb.velocity;
+		return velocity;
 	}
 
 	public Vector3 GetAccel()
 	{
 		return acceleration;
 	}
-
+	public Quaternion GetGyro()
+	{
+	  return gyro;
+  	}
 	public float GetOrient ()
 	{
 		Vector3 dir = transform.forward;
@@ -223,7 +228,11 @@ public class Car : MonoBehaviour, ICar {
 			wc.brakeTorque = 400f * brake;
 		}
 
-		acceleration = rb.velocity - prevVel;
+		prevVel = velocity;
+		velocity = transform.InverseTransformDirection(rb.velocity);
+		acceleration = (velocity - prevVel)/Time.deltaTime;
+		gyro = rb.rotation * Quaternion.Inverse(rotation);
+		rotation = rb.rotation;
 	}
 
 	void FlipUpright()

@@ -25,7 +25,6 @@ public class RoadBuilder : MonoBehaviour {
 	public float[] roadWidths;
 
 	Texture2D customRoadTexure;
-
 	GameObject createdRoad;
 
 	void Start()
@@ -177,6 +176,10 @@ public class RoadBuilder : MonoBehaviour {
 			Vector3 leftPos = posA + vWidth.normalized * roadWidth + vWidth.normalized * roadOffsetW;
 			Vector3 rightPos = posA - vWidth.normalized * roadWidth + vWidth.normalized * roadOffsetW;
 
+			PathNode centerNode = new PathNode();
+			centerNode.pos = (leftPos + rightPos)/2;
+			path.centerNodes.Add(centerNode);
+
 			vertices[iVert] = leftPos;
 			vertices[iVert + 1] = rightPos;
 
@@ -239,5 +242,6 @@ public class RoadBuilder : MonoBehaviour {
 
 			//terToolkit.TextureTerrain(slopeStops, heightStops, textures);
 		}
+		// todo: return CarPath
 	}
 }

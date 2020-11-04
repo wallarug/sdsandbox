@@ -13,3 +13,6 @@ sdsim/Library
 sdsim/Packages
 sdsim/ProjectSettings
 sdsim/Logs
+/debug.log
+/camera_a.png
+/camera_b.png
